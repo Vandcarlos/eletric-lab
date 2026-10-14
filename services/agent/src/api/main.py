@@ -1,8 +1,10 @@
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from src.api.schemas import InspectionReport
+from src.api.agent import router as agent_router
 from src.service.inspection import inspect_image
 
-app = FastAPI(title="Eletric Lab API", version="0.1.0")
+app = FastAPI(title="Eletric Lab API", version="0.2.0")
+app.include_router(agent_router)
 
 
 @app.get("/health")
