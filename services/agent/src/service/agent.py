@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from uuid import uuid4
 
 from src.api.agent_schemas import AgentRequest
-from src.llm.main import main_graph
+from src.llm.main.graph import main_graph
 
 
 def sse(event: str, data: dict) -> str:
@@ -21,23 +21,30 @@ async def stream_agent(request: AgentRequest) -> AsyncIterator[str]:
     }
     try:
         async for mode, chunk in main_graph.astream(
-            state, stream_mode=["custom", "updates"]
+            state, stream_mode=["custom", "updates"], subgraphs=True
         ):
             if mode == "custom":
+                # Non-subgraph implementations may return (mode, chunk).
                 yield sse(chunk["event"], chunk["data"])
             elif mode == "updates":
                 for node, update in chunk.items():
-                    if node in ("inspection", "fallback") and isinstance(update, dict):
-                        if update.get("image_url"):
-                            yield sse(
-                                "image.generated",
-                                {"url": update["image_url"], "mime_type": "image/png"},
-                            )
+                    if node == "fallback" and isinstance(update, dict):
                         yield sse("agent.completed", {
                             "run_id": run_id,
-                            "intent": "inspection" if node == "inspection" else "general",
+                            "intent": "general",
+                            "response": update.get("response", ""),
+                        })
+                    elif node == "inspect" and isinstance(update, dict):
+                        if update.get("image_url"):
+                            yield sse("image.generated", {
+                                "url": update["image_url"], "mime_type": "image/png"
+                            })
+                        yield sse("agent.completed", {
+                            "run_id": run_id,
+                            "intent": "inspection",
                             "response": update.get("response", ""),
                         })
     except Exception:
-        # Do not expose stack traces or credentials to clients.
-        yield sse("agent.error", {"run_id": run_id, "message": "Falha ao executar o agente."})
+        yield sse("agent.error", {
+            "run_id": run_id, "message": "Falha ao executar o agente."
+        })
