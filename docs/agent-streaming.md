@@ -1,38 +1,38 @@
-# Agent streaming (SSE)
+# Agent streaming
 
-`POST /v1/agent/stream` accepts JSON:
+The only inspection entrypoint is `POST /v1/agent/stream`.
 
+Request example:
 ```json
-{
-  "session_id": "session-123",
-  "type": "inspection",
-  "message": "Analise meu quadro",
-  "attachments": [],
-  "metadata": {}
-}
+{"session_id":"demo","type":"inspection","message":"Analise meu quadro","attachments":[]}
 ```
 
-Response: `text/event-stream`, with event/data pairs:
+SSE events: `agent.started`, `message.delta`, optional `image.generated`, `agent.completed`, `agent.error`.
 
-- `agent.started`: `{run_id, session_id}`
-- `message.delta`: `{text}` (incremental content)
-- `image.generated`: `{url, mime_type}` (only when a persisted artifact exists)
-- `agent.completed`: `{run_id, intent, response}`
-- `agent.error`: `{run_id, message}`
+Architecture:
 
-The initial LangGraph router trusts the explicit request type and routes to inspection or fallback.
-It is not yet an LLM-based intent classifier. The inspection node streams deterministic
-text chunks, not LLM tokens. There is no image generation, persistence, checkpointing
-or authentication yet. `session_id` is correlation metadata, not persistent conversation state.
-Image attachments are URL references but are not downloaded or inspected in this version.
-
-Use `curl -N`:
-
-```bash
-curl -N http://localhost:8000/v1/agent/stream \
-  -H 'Content-Type: application/json' \
-  -d '{"session_id":"demo","type":"inspection","message":"Analise este quadro"}'
+```text
+src/llm/
+  main/
+    graph.py
+    state.py
+    nodes/
+      detect_intent.py
+      fallback.py
+  inspect/
+    graph.py
+    state.py
+    nodes/
+      inspect_image.py
 ```
 
-For production: implement auth, tenant isolation, attachment allowlists/storage,
-stream cancellation, timeout handling, image provenance, and checkpointing.
+Nodes are callable classes using `__call__`. Main and inspect have distinct state schemas.
+The compiled inspect subgraph is mounted as a node inside the main graph.
+Shared keys (`message`, `attachments`, `response`, `image_url`) pass between graphs;
+`inspection_status` stays private to inspect.
+
+The initial router is deterministic; no model is invoked. Image generation and analysis
+are not implemented yet. Image URLs are references only and are not fetched.
+
+The SSE stream should carry text chunks from nested graph nodes, with one terminal
+completion event from the parent graph.
