@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml .
-RUN pip install --no-cache-dir "fastapi>=0.115,<1" "uvicorn[standard]>=0.30,<1" "python-multipart>=0.0.9,<1" "pydantic>=2.8,<3"
+RUN pip install --no-cache-dir "fastapi>=0.115,<1" "uvicorn[standard]>=0.30,<1" "python-multipart>=0.0.9,<1" "pydantic>=2.8,<3" "langgraph>=0.2,<2" "langchain-core>=0.3,<2"
 COPY src ./src
 EXPOSE 8000
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
