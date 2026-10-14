@@ -20,30 +20,30 @@ async def stream_agent(request: AgentRequest) -> AsyncIterator[str]:
         "attachments": [item.model_dump() for item in request.attachments],
     }
     try:
-        async for mode, chunk in main_graph.astream(
+        completed = False
+        async for namespace, mode, chunk in main_graph.astream(
             state, stream_mode=["custom", "updates"], subgraphs=True
         ):
-            if mode == "custom":
-                # Non-subgraph implementations may return (mode, chunk).
+            if mode == "custom" and isinstance(chunk, dict):
                 yield sse(chunk["event"], chunk["data"])
-            elif mode == "updates":
+            elif mode == "updates" and not namespace:
                 for node, update in chunk.items():
-                    if node == "fallback" and isinstance(update, dict):
-                        yield sse("agent.completed", {
-                            "run_id": run_id,
-                            "intent": "general",
-                            "response": update.get("response", ""),
+                    if node not in ("inspect", "fallback") or not isinstance(update, dict):
+                        continue
+                    if update.get("image_url"):
+                        yield sse("image.generated", {
+                            "url": update["image_url"], "mime_type": "image/png"
                         })
-                    elif node == "inspect" and isinstance(update, dict):
-                        if update.get("image_url"):
-                            yield sse("image.generated", {
-                                "url": update["image_url"], "mime_type": "image/png"
-                            })
-                        yield sse("agent.completed", {
-                            "run_id": run_id,
-                            "intent": "inspection",
-                            "response": update.get("response", ""),
-                        })
+                    yield sse("agent.completed", {
+                        "run_id": run_id,
+                        "intent": "inspection" if node == "inspect" else "general",
+                        "response": update.get("response", ""),
+                    })
+                    completed = True
+        if not completed:
+            yield sse("agent.error", {
+                "run_id": run_id, "message": "O agente terminou sem resposta."
+            })
     except Exception:
         yield sse("agent.error", {
             "run_id": run_id, "message": "Falha ao executar o agente."
